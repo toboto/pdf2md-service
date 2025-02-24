@@ -1,0 +1,38 @@
+# Cursor 规则配置文件
+
+# 忽略的文件和目录
+ignore:
+  - .git
+  - __pycache__
+  - *.pyc
+  - venv
+  - .env
+  - .DS_Store
+  - output/
+  - temp/
+  - storage/
+
+# 代码风格规则
+style:
+  python:
+    max_line_length: 100
+    indent_size: 4
+    quote_type: single
+
+# 单元测试
+test:
+  python:
+    pytest:
+      - test/
+rules:
+  - 所有代码必须有单元测试
+  - 所有函数必须有注释
+  - 所有类必须有注释
+  - 所有模块必须有注释
+  - 所有配置必须有注释
+  - 所有异常必须有注释
+
+# 自动格式化规则
+format:
+  on_save: true
+  python: true 
