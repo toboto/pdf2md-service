@@ -1,0 +1,19 @@
+# 阿里云MNS配置
+mns:
+  endpoint: ''
+  access_id: ''
+  access_key: ''
+  queue_name: 'rbase-test'
+
+# 阿里云OSS配置
+oss:
+  endpoint: 'http://oss-cn-beijing.aliyuncs.com/'
+  access_id: ''
+  access_key: ''
+  bucket_name: 'rbase-test'
+
+# 临时文件存储路径
+temp:
+  pdf_dir: 'temp/pdf'
+  image_dir: 'temp/images'
+  markdown_dir: 'temp/markdown'

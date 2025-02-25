@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- 服务的唯一标识符 -->
+    <key>Label</key>
+    <string>com.rbase.pdf2md</string>
+    
+    <!-- 要运行的程序 -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/anaconda3/bin/conda</string>
+        <string>run</string>
+        <string>-n</string>
+        <string>MinerU</string>
+        <string>python</string>
+        <string>[dist_home]/src/pdf_process_service.py</string>
+    </array>
+    
+    <!-- 工作目录 -->
+    <key>WorkingDirectory</key>
+    <string>[dist_home]</string>
+    
+    <!-- 开机自启动 -->
+    <key>RunAtLoad</key>
+    <true/>
+    
+    <!-- 保持运行 -->
+    <key>KeepAlive</key>
+    <true/>
+    
+    <!-- 环境变量 -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/anaconda3/bin/conda:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+    
+    <!-- 标准输出日志路径 -->
+    <key>StandardOutPath</key>
+    <string>[dist_home]/logs/pdf_service.log</string>
+    
+    <!-- 标准错误日志路径 -->
+    <key>StandardErrorPath</key>
+    <string>[dist_home]/logs/error.log</string>
+</dict>
+</plist>

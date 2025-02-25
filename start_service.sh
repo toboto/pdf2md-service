@@ -1,2 +1,3 @@
 #!/bin/bash
-python src/pdf_process_service.py 
+launchctl load com.rbase.pdf2md.plist
+launchctl start com.rbase.pdf2md

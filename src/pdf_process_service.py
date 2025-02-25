@@ -7,6 +7,7 @@ PDF处理服务
 """
 
 import json
+import sys 
 import os
 import yaml
 import logging
@@ -19,16 +20,27 @@ from magic_pdf.data.data_reader_writer import FileBasedDataWriter
 from magic_pdf.model.doc_analyze_by_custom_model import doc_analyze
 from magic_pdf.config.enums import SupportedPdfParseMethod
 
+# 创建logs目录
+os.makedirs('logs', exist_ok=True)
+
 # 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('pdf_service.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('pdf_service')
+logger.setLevel(logging.INFO)
+
+# 创建处理器
+file_handler = logging.FileHandler(filename='logs/pdf_service.log')
+stdout_handler = logging.StreamHandler(stream=sys.stdout)
+
+# 设置日志格式
+formatter = logging.Formatter('%(asctime)s [%(filename)s:%(lineno)s] [%(levelname)s] %(message)s')
+file_handler.setFormatter(formatter)
+stdout_handler.setFormatter(formatter)
+
+# 添加处理器
+logger.addHandler(file_handler)
+logger.addHandler(stdout_handler)
+
+logger.info("日志系统初始化完成")
 
 class PDFProcessService:
     """
@@ -46,28 +58,28 @@ class PDFProcessService:
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
             
-        # # 初始化MNS客户端
-        # self.mns_account = Account(
-        #     self.config['mns']['endpoint'],
-        #     self.config['mns']['access_id'],
-        #     self.config['mns']['access_key']
-        # )
-        # self.queue = self.mns_account.get_queue(self.config['mns']['queue_name'])
+        # 初始化MNS客户端
+        self.mns_account = Account(
+            self.config['mns']['endpoint'],
+            self.config['mns']['access_id'],
+            self.config['mns']['access_key']
+        )
+        self.queue = self.mns_account.get_queue(self.config['mns']['queue_name'])
         
-        # # 初始化OSS客户端
-        # self.oss_auth = oss2.Auth(
-        #     self.config['oss']['access_id'],
-        #     self.config['oss']['access_key']
-        # )
-        # self.bucket = oss2.Bucket(
-        #     self.oss_auth,
-        #     self.config['oss']['endpoint'],
-        #     self.config['oss']['bucket_name']
-        # )
+        # 初始化OSS客户端
+        self.oss_auth = oss2.Auth(
+            self.config['oss']['access_id'],
+            self.config['oss']['access_key']
+        )
+        self.bucket = oss2.Bucket(
+            self.oss_auth,
+            self.config['oss']['endpoint'],
+            self.config['oss']['bucket_name']
+        )
         
-        # # 创建临时目录
-        # for dir_path in self.config['temp'].values():
-        #     os.makedirs(dir_path, exist_ok=True)
+        # 创建临时目录
+        for dir_path in self.config['temp'].values():
+            os.makedirs(dir_path, exist_ok=True)
 
     def start(self):
         """
@@ -103,7 +115,7 @@ class PDFProcessService:
             content = json.loads(message.message_body)
             article_id = content['article_id']
             pdf_url = content['pdf_url']
-            markdown_oss_path = content['markdown_path']
+            markdown_oss_file = content['markdown_file']
             images_oss_path = content['images_path']
             json_oss_path = content['json_path']
             
@@ -117,15 +129,15 @@ class PDFProcessService:
             result = self.process_pdf(
                 pdf_path,
                 article_id,
-                self.config['temp']['image_dir'],
+                self.config['temp']['image_dir']+'/'+article_id+'/',
                 self.config['temp']['markdown_dir']
             )
-            
+
             # 上传处理结果到OSS
             self.upload_results(
                 article_id,
                 result,
-                markdown_oss_path,
+                markdown_oss_file,
                 images_oss_path,
                 json_oss_path
             )
@@ -168,15 +180,18 @@ class PDFProcessService:
             
         # 获取处理结果
         markdown_path = os.path.join(markdown_dir, f'{article_id}.md')
-        json_path = os.path.join(markdown_dir, f'{article_id}_middle.json')
+        json_middle_path = os.path.join(markdown_dir, f'{article_id}_middle.json')
+        json_content_list_path = os.path.join(markdown_dir, f'{article_id}_content_list.json')
         
         # 导出结果文件
-        pipe_result.dump_md(md_writer, f'{article_id}.md', 'images')
+        pipe_result.dump_md(md_writer, f'{article_id}.md', image_dir)
         pipe_result.dump_middle_json(md_writer, f'{article_id}_middle.json')
+        pipe_result.dump_content_list(md_writer, f"{article_id}_content_list.json", image_dir)
         
         return {
             'markdown_path': markdown_path,
-            'json_path': json_path,
+            'json_middle_path': json_middle_path,
+            'json_content_list_path': json_content_list_path,
             'image_dir': image_dir
         }
 
@@ -192,7 +207,7 @@ class PDFProcessService:
         with open(local_path, 'wb') as f:
             f.write(response.content)
 
-    def upload_results(self, article_id, result, markdown_oss_path, images_oss_path, json_oss_path):
+    def upload_results(self, article_id, result, markdown_oss_file, images_oss_path, json_oss_path):
         """
         上传处理结果到OSS
         Args:
@@ -204,26 +219,37 @@ class PDFProcessService:
         """
         # 上传Markdown文件
         self.bucket.put_object_from_file(
-            markdown_oss_path,
+            markdown_oss_file,
             result['markdown_path']
         )
         
         # 上传JSON文件
+        # 上传中间JSON文件
+        json_middle_name = os.path.basename(result['json_middle_path'])
         self.bucket.put_object_from_file(
-            json_oss_path,
-            result['json_path']
+            os.path.join(json_oss_path, json_middle_name),
+            result['json_middle_path']
         )
         
-        # 上传图片文件
-        for image_name in os.listdir(result['image_dir']):
-            if image_name.endswith(('.png', '.jpg', '.jpeg')):
-                image_path = os.path.join(result['image_dir'], image_name)
-                oss_image_path = f'{images_oss_path}/{image_name}'
-                self.bucket.put_object_from_file(
-                    oss_image_path,
-                    image_path
-                )
+        # 上传内容列表JSON文件
+        json_content_list_name = os.path.basename(result['json_content_list_path']) 
+        self.bucket.put_object_from_file(
+            os.path.join(json_oss_path, json_content_list_name),
+            result['json_content_list_path']
+        )
+        
+        # 上传图片文件(如果存在图片目录)
+        if os.path.exists(result['image_dir']):
+            for image_name in os.listdir(result['image_dir']):
+                if image_name.endswith(('.png', '.jpg', '.jpeg')):
+                    image_path = os.path.join(result['image_dir'], image_name)
+                    oss_image_path = f'{images_oss_path}/{image_name}'
+                    self.bucket.put_object_from_file(
+                        oss_image_path,
+                        image_path
+                    )
 
 if __name__ == '__main__':
+    logger.info("开始启动PDF处理服务")
     service = PDFProcessService('config/config.yaml')
     service.start() 
