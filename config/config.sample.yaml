@@ -4,6 +4,10 @@ mns:
   access_id: ''
   access_key: ''
   queue_name: 'rbase-test'
+  # 主题服务配置
+  topic:
+    topic_name: 'pdf-process-result-topic'  # 主题名称
+    tag: 'pdf-result'  # 消息标签，用于消息过滤
 
 # 阿里云OSS配置
 oss:
