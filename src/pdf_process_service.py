@@ -15,6 +15,7 @@ import requests
 import oss2
 from mns.account import Account
 from mns.queue import *
+from mns.topic import *
 from magic_pdf.data.dataset import PymuDocDataset
 from magic_pdf.data.data_reader_writer import FileBasedDataWriter
 from magic_pdf.model.doc_analyze_by_custom_model import doc_analyze
@@ -66,6 +67,11 @@ class PDFProcessService:
         )
         self.queue = self.mns_account.get_queue(self.config['mns']['queue_name'])
         
+        # 初始化主题服务
+        if 'topic' in self.config['mns']:
+            self.topic = self.mns_account.get_topic(self.config['mns']['topic']['topic_name'])
+            logger.info(f"已初始化主题服务: {self.config['mns']['topic']['topic_name']}")
+        
         # 初始化OSS客户端
         self.oss_auth = oss2.Auth(
             self.config['oss']['access_id'],
@@ -114,12 +120,13 @@ class PDFProcessService:
             # 解析消息内容
             content = json.loads(message.message_body)
             article_id = content['article_id']
+            tag = content['tag']
             pdf_url = content['pdf_url']
             markdown_oss_file = content['markdown_file']
             images_oss_path = content['images_path']
             json_oss_path = content['json_path']
             
-            logger.info(f'开始处理文章 {article_id}')
+            logger.info(f'开始处理文章 {article_id}，标签 {tag}')
             
             # 下载PDF文件
             pdf_path = os.path.join(self.config['temp']['pdf_dir'], f'{article_id}.pdf')
@@ -141,6 +148,17 @@ class PDFProcessService:
                 images_oss_path,
                 json_oss_path
             )
+            
+            # 发送主题消息，使用与接收到的消息相同的格式
+            topic_message = {
+                'article_id': article_id,
+                'tag': tag,
+                'pdf_url': pdf_url,
+                'markdown_file': markdown_oss_file,
+                'images_path': images_oss_path,
+                'json_path': json_oss_path
+            }
+            self.send_topic_message(topic_message)
             
             logger.info(f'文章 {article_id} 处理完成')
             
@@ -248,6 +266,38 @@ class PDFProcessService:
                         oss_image_path,
                         image_path
                     )
+
+    def send_topic_message(self, message_content):
+        """
+        向主题发送消息
+        Args:
+            message_content: 消息内容（JSON格式的字典）
+        """
+        try:
+            # 检查主题是否已初始化
+            if not hasattr(self, 'topic'):
+                logger.warning("主题服务未初始化，无法发送消息")
+                return None
+            
+            # 将消息内容转换为JSON字符串
+            message_body = json.dumps(message_content)
+            
+            # 创建主题消息
+            msg = TopicMessage(message_body)
+            
+            # 设置消息标签
+            message_tag = self.config['mns']['topic']['tag']
+            msg.message_tag = message_tag
+            
+            # 发送消息
+            res = self.topic.publish_message(msg)
+            
+            logger.info(f"成功发送主题消息，消息ID: {res.message_id}")
+            return res.message_id
+            
+        except Exception as e:
+            logger.error(f"发送主题消息失败: {e}", exc_info=True)
+            raise
 
 if __name__ == '__main__':
     logger.info("开始启动PDF处理服务")
