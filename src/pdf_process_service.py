@@ -282,8 +282,8 @@ class PDFProcessService:
             # 将消息内容转换为JSON字符串
             message_body = json.dumps(message_content)
             
-            # 创建主题消息
-            msg = TopicMessage(message_body)
+            # 创建Base64编码的主题消息
+            msg = Base64TopicMessage(message_body)
             
             # 设置消息标签
             message_tag = self.config['mns']['topic']['tag']
