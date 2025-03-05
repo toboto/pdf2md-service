@@ -286,7 +286,7 @@ class PDFProcessService:
             msg = Base64TopicMessage(message_body)
             
             # 设置消息标签
-            message_tag = self.config['mns']['topic']['tag']
+            message_tag = self.config['mns']['topic']['tag'] if message_content['tag'] is None else message_content['tag']
             msg.message_tag = message_tag
             
             # 发送消息
