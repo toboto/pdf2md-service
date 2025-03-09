@@ -7,18 +7,19 @@ A service for converting PDF documents to Markdown format, designed to run as a 
 PDF2MD Service is a Python-based application that provides automated PDF to Markdown conversion capabilities. It's designed to run as a persistent system service on macOS, handling document conversion tasks efficiently and reliably.
 
 ## Project Structure 
+```
 .
-├── config/ # Configuration files
-├── docs/ # Documentation
-├── logs/ # Log files
-├── outputs/ # Converted markdown files
-├── samples/ # Sample PDF files
-├── src/ # Source code
-├── temp/ # Temporary files
-├── tests/ # Unit tests
-├── setup.py # Project setup and dependencies
-└── start_service.sh # Service startup script
-
+├── config/         # 配置文件
+├── docs/           # 文档
+├── logs/           # 日志文件
+├── outputs/        # 转换后的 Markdown 文件
+├── samples/        # 示例 PDF 文件
+├── src/            # 源代码
+├── temp/           # 临时文件
+├── tests/          # 单元测试
+├── setup.py        # 项目设置和依赖
+└── start_service.sh # 服务启动脚本
+```
 
 ## Features
 
@@ -27,15 +28,25 @@ PDF2MD Service is a Python-based application that provides automated PDF to Mark
 - Automated document processing
 - Logging and monitoring
 - OSS storage integration
+- Aliyun Log Service integration for centralized logging
 
 ## Requirements
 
 - Python 3.x
 - macOS
 - Required Python packages:
-  - requests
-  - oss2
-  - pyyaml
+  - requests>=2.32.0
+  - oss2>=2.19.0
+  - pyyaml>=6.0.0
+  - aliyun-mns-sdk>=1.2.0
+  - aliyun-log-python-sdk>=0.9.0
+  - aliyun-python-sdk-core>=2.16.0
+  - aliyun-python-sdk-kms>=2.16.0
+  - magic-pdf>=1.1.0
+  - numpy>=1.26.0
+  - pandas>=2.2.0
+  - pymupdf>=1.24.0
+  - python-dateutil>=2.9.0
 
 ## Installation
 
@@ -56,6 +67,53 @@ sudo cp com.rbase.pdf2md.plist ~/Library/LaunchAgents/
 
 # Load the service
 launchctl load ~/Library/LaunchAgents/com.rbase.pdf2md.plist
+```
+
+## Configuration
+
+### Aliyun Services Configuration
+
+The service uses several Aliyun cloud services that need to be configured in `config/config.yaml`:
+
+#### MNS (Message Service)
+```yaml
+mns:
+  endpoint: 'https://xxxx.mns.cn-region.aliyuncs.com'
+  access_id: 'YOUR_ACCESS_ID'
+  access_key: 'YOUR_ACCESS_KEY'
+  queue_name: 'your-queue-name'
+  topic:
+    topic_name: 'your-topic-name'
+    tag: ''  # Optional message tag
+```
+
+#### OSS (Object Storage Service)
+```yaml
+oss:
+  endpoint: 'http://oss-cn-region.aliyuncs.com'
+  access_id: 'YOUR_ACCESS_ID'
+  access_key: 'YOUR_ACCESS_KEY'
+  bucket_name: 'your-bucket-name'
+```
+
+#### SLS (Log Service)
+```yaml
+sls:
+  endpoint: "cn-region.log.aliyuncs.com"  # Log service endpoint
+  access_id: "YOUR_ACCESS_ID"  # Aliyun access key ID
+  access_key: "YOUR_ACCESS_KEY"  # Aliyun access key secret
+  project: "your-project-name"  # Log project name
+  logstore: "your-logstore-name"  # Log store name
+  topic: "pdf-service"  # Log topic
+  source: "server-name"  # Log source identifier, unique per server
+```
+
+### Temporary Files Configuration
+```yaml
+temp:
+  pdf_dir: 'temp/pdf'
+  image_dir: 'temp/images'
+  markdown_dir: 'temp/markdown'
 ```
 
 ## Usage
@@ -108,9 +166,33 @@ pytest tests/
 
 ## Logging
 
+### Local Logging
 Logs are stored in the following locations:
 - Service logs: `logs/pdf_service.log`
 - Error logs: `logs/error.log`
+
+### Cloud Logging (Aliyun SLS)
+The service also sends logs to Aliyun Log Service (SLS) for centralized logging:
+
+- Each log entry includes:
+  - Level (INFO/WARNING/ERROR)
+  - Message
+  - Timestamp
+  - Additional context (article_id, file paths, etc.)
+  - Source identifier (configured per server)
+
+- To view logs in Aliyun console:
+  1. Log in to the Aliyun console
+  2. Navigate to Log Service (SLS)
+  3. Select your project and logstore
+  4. Use the query interface to search logs
+
+- Common log queries:
+  ```
+  level: ERROR  # Find all error logs
+  article_id: 12345  # Find logs for a specific article
+  source: server-name  # Find logs from a specific server
+  ```
 
 ## License
 
@@ -127,4 +209,4 @@ This is an internal project. Please follow the project's coding standards and su
 
 ## Support
 
-For internal support and bug reports, please contact the development team.
+For internal support and bug reports, please contact the development team. 
