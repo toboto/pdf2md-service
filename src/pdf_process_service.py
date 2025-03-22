@@ -157,6 +157,11 @@ class PDFProcessService:
             try:
                 # 接收消息
                 message = self.queue.receive_message(wait_seconds=30)
+                if message.dequeue_count >= 3:
+                    logger.info(f"消息 {message.message_id} 已重试3次，跳过处理")
+                    self.send_cloud_log("INFO", f"消息 {message.message_id} 已重试3次，跳过处理")
+                    self.queue.delete_message(message.receipt_handle)
+                    continue
                 
                 # 处理消息
                 self.process_message(message)
