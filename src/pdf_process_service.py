@@ -44,8 +44,6 @@ stdout_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 logger.addHandler(stdout_handler)
 
-logger.info("日志系统初始化完成")
-
 class PDFProcessService:
     """
     PDF处理服务类
@@ -110,7 +108,7 @@ class PDFProcessService:
         for dir_path in self.config['temp'].values():
             os.makedirs(dir_path, exist_ok=True)
 
-    def send_cloud_log(self, level, message, extra_fields=None):
+    def log_remotely(self, level, message, extra_fields=None):
         """
         发送日志到阿里云日志服务
         Args:
@@ -118,6 +116,16 @@ class PDFProcessService:
             message: 日志消息
             extra_fields: 额外的字段信息（字典格式）
         """
+        if level == "INFO":
+            logger.info(message)
+        elif level == "WARNING":
+            logger.warning(message)
+        elif level == "ERROR":
+            if "exc_info" in extra_fields:
+                logger.error(message, exc_info=extra_fields["exc_info"])
+            else:
+                logger.error(message)
+            
         if not self.cloud_log_enabled:
             return
             
@@ -150,16 +158,14 @@ class PDFProcessService:
         """
         启动服务，开始监听消息队列
         """
-        logger.info('PDF处理服务已启动，等待消息...')
-        self.send_cloud_log("INFO", "PDF处理服务已启动")
+        self.log_remotely("INFO", "PDF处理服务已启动")
         
         while True:
             try:
                 # 接收消息
                 message = self.queue.receive_message(wait_seconds=30)
                 if message.dequeue_count >= 3:
-                    logger.info(f"消息 {message.message_id} 已重试3次，跳过处理")
-                    self.send_cloud_log("INFO", f"消息 {message.message_id} 已重试3次，跳过处理")
+                    self.log_remotely("INFO", f"消息 {message.message_id} 已重试3次，跳过处理")
                     self.queue.delete_message(message.receipt_handle)
                     continue
                 
@@ -172,11 +178,9 @@ class PDFProcessService:
             except MNSExceptionBase as e:
                 if e.type == "MessageNotExist":
                     continue
-                logger.error(f"接收消息失败: {e}")
-                self.send_cloud_log("ERROR", f"接收消息失败: {e}")
+                self.log_remotely("ERROR", f"接收消息失败: {e}", {"exception_type": type(e).__name__, "exc_info": True})
             except Exception as e:
-                logger.error(f"处理消息时发生错误: {e}", exc_info=True)
-                self.send_cloud_log("ERROR", f"处理消息时发生错误: {e}", {"exception_type": type(e).__name__})
+                self.log_remotely("ERROR", f"处理消息时发生错误: {e}", {"exception_type": type(e).__name__, "exc_info": True})
 
     def process_message(self, message):
         """
@@ -194,8 +198,7 @@ class PDFProcessService:
             images_oss_path = content['images_path']
             json_oss_path = content['json_path']
             
-            logger.info(f'开始处理文章 {article_id}，标签 {tag}')
-            self.send_cloud_log("INFO", f"开始处理文章 {article_id}", {
+            self.log_remotely("INFO", f"开始处理文章 {article_id}", {
                 "article_id": article_id,
                 "tag": tag,
                 "pdf_url": pdf_url
@@ -233,17 +236,16 @@ class PDFProcessService:
             }
             self.send_topic_message(topic_message)
             
-            logger.info(f'文章 {article_id} 处理完成')
-            self.send_cloud_log("INFO", f"文章 {article_id} 处理完成", {
+            self.log_remotely("INFO", f"文章 {article_id} 处理完成", {
                 "article_id": article_id,
                 "status": "success"
             })
             
         except Exception as e:
-            logger.error(f'处理消息失败: {e}', exc_info=True)
-            self.send_cloud_log("ERROR", f"处理消息失败: {e}", {
+            self.log_remotely("ERROR", f"处理消息失败: {e}", {
                 "article_id": article_id if 'article_id' in locals() else "unknown",
-                "exception_type": type(e).__name__
+                "exception_type": type(e).__name__,
+                "exc_info": True
             })
             raise
 
@@ -259,7 +261,7 @@ class PDFProcessService:
             处理结果字典
         """
         try:
-            self.send_cloud_log("INFO", f"开始处理PDF文件", {
+            self.log_remotely("INFO", f"开始处理PDF文件, 文章ID: {article_id}, 文件路径: {pdf_path}", {
                 "article_id": article_id,
                 "pdf_path": pdf_path
             })
@@ -276,7 +278,7 @@ class PDFProcessService:
             md_writer = FileBasedDataWriter(markdown_dir)
             
             # 处理PDF
-            self.send_cloud_log("INFO", f"分析PDF文件", {"article_id": article_id})
+            self.log_remotely("INFO", f"分析PDF文件", {"article_id": article_id})
             if ds.classify() == SupportedPdfParseMethod.OCR:
                 infer_result = ds.apply(doc_analyze, ocr=True)
                 pipe_result = infer_result.pipe_ocr_mode(image_writer)
@@ -294,7 +296,7 @@ class PDFProcessService:
             pipe_result.dump_middle_json(md_writer, f'{article_id}_middle.json')
             pipe_result.dump_content_list(md_writer, f"{article_id}_content_list.json", image_dir)
             
-            self.send_cloud_log("INFO", f"PDF文件处理完成", {
+            self.log_remotely("INFO", f"PDF文件处理完成, 文章ID: {article_id}, 文章路径: {markdown_path}", {
                 "article_id": article_id,
                 "markdown_path": markdown_path
             })
@@ -306,10 +308,10 @@ class PDFProcessService:
                 'image_dir': image_dir
             }
         except Exception as e:
-            logger.error(f"处理PDF文件失败: {e}", exc_info=True)
-            self.send_cloud_log("ERROR", f"处理PDF文件失败: {e}", {
+            self.log_remotely("ERROR", f"处理PDF文件失败: {e}", {
                 "article_id": article_id,
-                "exception_type": type(e).__name__
+                "exception_type": type(e).__name__,
+                "exc_info": True
             })
             raise
 
@@ -321,7 +323,7 @@ class PDFProcessService:
             local_path: 本地保存路径
         """
         try:
-            self.send_cloud_log("INFO", f"开始下载文件", {
+            self.log_remotely("INFO", f"开始下载文件, 文件URL: {url}, 本地路径: {local_path}", {
                 "url": url,
                 "local_path": local_path
             })
@@ -331,14 +333,14 @@ class PDFProcessService:
             with open(local_path, 'wb') as f:
                 f.write(response.content)
                 
-            self.send_cloud_log("INFO", f"文件下载完成", {
+            self.log_remotely("INFO", f"文件下载完成, 文件路径: {local_path}", {
                 "local_path": local_path
             })
         except Exception as e:
-            logger.error(f"下载文件失败: {e}", exc_info=True)
-            self.send_cloud_log("ERROR", f"下载文件失败: {e}", {
+            self.log_remotely("ERROR", f"下载文件失败: {e}", {
                 "url": url,
-                "exception_type": type(e).__name__
+                "exception_type": type(e).__name__,
+                "exc_info": True
             })
             raise
 
@@ -353,7 +355,7 @@ class PDFProcessService:
             json_oss_path: JSON文件的OSS路径
         """
         try:
-            self.send_cloud_log("INFO", f"开始上传处理结果到OSS", {
+            self.log_remotely("INFO", f"开始上传处理结果到OSS, 文章ID: {article_id}", {
                 "article_id": article_id,
                 "markdown_oss_file": markdown_oss_file,
                 "images_oss_path": images_oss_path
@@ -391,15 +393,15 @@ class PDFProcessService:
                             image_path
                         )
                         
-            self.send_cloud_log("INFO", f"处理结果上传完成", {
+            self.log_remotely("INFO", f"处理结果上传完成, 文章ID: {article_id}", {
                 "article_id": article_id,
                 "status": "success"
             })
         except Exception as e:
-            logger.error(f"上传处理结果失败: {e}", exc_info=True)
-            self.send_cloud_log("ERROR", f"上传处理结果失败: {e}", {
+            self.log_remotely("ERROR", f"上传处理结果失败: {e}", {
                 "article_id": article_id,
-                "exception_type": type(e).__name__
+                "exception_type": type(e).__name__,
+                "exc_info": True
             })
             raise
 
@@ -412,12 +414,11 @@ class PDFProcessService:
         try:
             # 检查主题是否已初始化
             if not hasattr(self, 'topic'):
-                logger.warning("主题服务未初始化，无法发送消息")
-                self.send_cloud_log("WARNING", "主题服务未初始化，无法发送消息")
+                self.log_remotely("WARNING", "主题服务未初始化，无法发送消息")
                 return None
             
             article_id = message_content.get('article_id', 'unknown')
-            self.send_cloud_log("INFO", f"发送主题消息", {
+            self.log_remotely("INFO", f"发送主题消息，文章ID: {article_id}", {
                 "article_id": article_id
             })
             
@@ -434,8 +435,7 @@ class PDFProcessService:
             # 发送消息
             res = self.topic.publish_message(msg)
             
-            logger.info(f"成功发送主题消息，消息ID: {res.message_id}")
-            self.send_cloud_log("INFO", f"主题消息发送成功", {
+            self.log_remotely("INFO", f"主题消息发送成功，消息ID: {res.message_id}", {
                 "article_id": article_id,
                 "message_id": res.message_id
             })
@@ -443,10 +443,10 @@ class PDFProcessService:
             return res.message_id
             
         except Exception as e:
-            logger.error(f"发送主题消息失败: {e}", exc_info=True)
-            self.send_cloud_log("ERROR", f"发送主题消息失败: {e}", {
+            self.log_remotely("ERROR", f"发送主题消息失败: {e}", {
                 "article_id": message_content.get('article_id', 'unknown'),
-                "exception_type": type(e).__name__
+                "exception_type": type(e).__name__,
+                "exc_info": True
             })
             raise
 
