@@ -109,6 +109,9 @@ class PDFProcessService:
         for dir_path in self.config['temp'].values():
             os.makedirs(dir_path, exist_ok=True)
 
+        # 初始化服务时间
+        self.start_time = time.time()
+
     def log_remotely(self, level, message, extra_fields=None):
         """
         发送日志到阿里云日志服务
