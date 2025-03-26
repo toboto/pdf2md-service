@@ -23,6 +23,7 @@ from magic_pdf.config.enums import SupportedPdfParseMethod
 from aliyun.log import LogClient, LogItem, PutLogsRequest
 from aliyun.log.logexception import LogException
 import time
+import psutil
 
 # 创建logs目录
 os.makedirs('logs', exist_ok=True)
@@ -60,8 +61,10 @@ class PDFProcessService:
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
             
-        # 初始化阿里云日志服务客户端
-        if 'sls' in self.config:
+        # 初始化阿里云日志服务
+        self.cloud_log_enabled = self.config.get('aliyun', {}).get('log_service', {}).get('enabled', False)
+        self.last_heartbeat_time = 0  # 记录上次心跳时间
+        if self.cloud_log_enabled:
             try:
                 self.log_client = LogClient(
                     endpoint=self.config['sls']['endpoint'],
@@ -73,10 +76,8 @@ class PDFProcessService:
                 self.log_topic = self.config['sls']['topic']
                 self.log_source = self.config['sls']['source']
                 logger.info("阿里云日志服务初始化完成")
-                self.cloud_log_enabled = True
             except Exception as e:
                 logger.error(f"阿里云日志服务初始化失败: {e}")
-                self.cloud_log_enabled = False
         else:
             self.cloud_log_enabled = False
             
@@ -162,6 +163,9 @@ class PDFProcessService:
         
         while True:
             try:
+                # 检查心跳
+                self.log_heartbeat()
+                
                 # 接收消息
                 message = self.queue.receive_message(wait_seconds=30)
                 if message.dequeue_count >= 3:
@@ -177,6 +181,7 @@ class PDFProcessService:
                 
             except MNSExceptionBase as e:
                 if e.type == "MessageNotExist":
+                    self.log_heartbeat()
                     continue
                 self.log_remotely("ERROR", f"接收消息失败: {e}", {"exception_type": type(e).__name__, "exc_info": True})
             except Exception as e:
@@ -449,6 +454,19 @@ class PDFProcessService:
                 "exc_info": True
             })
             raise
+
+    def log_heartbeat(self):
+        """
+        记录服务心跳日志
+        如果距离上次心跳超过5分钟，则输出心跳日志
+        """
+        current_time = time.time()
+        if current_time - self.last_heartbeat_time >= 300:  # 5分钟 = 300秒
+            self.log_remotely("INFO", "PDF处理服务心跳检测", {
+                "uptime": current_time - self.start_time,
+                "memory_usage": psutil.Process().memory_info().rss / 1024 / 1024  # 转换为MB
+            })
+            self.last_heartbeat_time = current_time
 
 if __name__ == '__main__':
     logger.info("开始启动PDF处理服务")
