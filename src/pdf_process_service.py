@@ -62,7 +62,7 @@ class PDFProcessService:
             self.config = yaml.safe_load(f)
             
         # 初始化阿里云日志服务
-        self.cloud_log_enabled = self.config.get('aliyun', {}).get('log_service', {}).get('enabled', False)
+        self.cloud_log_enabled = self.config.get('sls', {}).get('enabled', False)
         self.last_heartbeat_time = 0  # 记录上次心跳时间
         if self.cloud_log_enabled:
             try:
