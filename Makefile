@@ -1,32 +1,30 @@
-# 默认输出目录
+# Default output directory
 DIST_DIR ?= ../dist
 
-# 获取当前分支名
+# Get current branch name
 BRANCH_NAME := $(shell git rev-parse --abbrev-ref HEAD)
 
-# 获取当前时间作为版本号
-VERSION := $(shell date +%Y%m%d_%H%M%S)
-
-# 默认目标
-.PHONY: all install clean
+# Default targets
+.PHONY: all install clean help
 
 all: install
 
-# 安装目标：将当前分支打包到指定目录
+# Install target: extract current branch files to specified directory
 install:
-	@echo "开始打包当前分支 $(BRANCH_NAME) 到 $(DIST_DIR)"
+	@echo "Extracting current branch $(BRANCH_NAME) to $(DIST_DIR)"
 	@mkdir -p $(DIST_DIR)
-	@git archive --format=tar.gz --output=$(DIST_DIR)/pdf2md-service_$(VERSION).tar.gz HEAD
-	@echo "打包完成：$(DIST_DIR)/pdf2md-service_$(VERSION).tar.gz"
+	@git archive HEAD | tar -x -C $(DIST_DIR)
+	@echo "Files extracted to $(DIST_DIR)"
 
-# 清理目标：删除打包文件
+# Clean target: remove extracted files
 clean:
-	@echo "清理打包文件..."
-	@rm -f $(DIST_DIR)/pdf2md-service_*.tar.gz
+	@echo "Cleaning output directory..."
+	@rm -rf $(DIST_DIR)/*
+	@echo "Output directory cleaned"
 
-# 帮助信息
+# Help information
 help:
-	@echo "用法："
-	@echo "  make install [DIST_DIR=../dist]  - 打包当前分支到指定目录"
-	@echo "  make clean                      - 清理打包文件"
-	@echo "  make help                       - 显示帮助信息" 
+	@echo "Usage:"
+	@echo "  make install [DIST_DIR=../dist]  - Extract current branch to specified directory"
+	@echo "  make clean                      - Clean output directory"
+	@echo "  make help                       - Show this help information" 
