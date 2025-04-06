@@ -24,6 +24,7 @@ from aliyun.log import LogClient, LogItem, PutLogsRequest
 from aliyun.log.logexception import LogException
 import time
 import psutil
+import argparse
 
 # 创建logs目录
 os.makedirs('logs', exist_ok=True)
@@ -51,7 +52,7 @@ class PDFProcessService:
     处理从MNS接收的消息，将PDF转换为Markdown并上传到OSS
     """
     
-    def __init__(self, config_path):
+    def __init__(self, config_path, wait_seconds=30, max_runtime=3600*24):
         """
         初始化服务
         Args:
@@ -111,6 +112,8 @@ class PDFProcessService:
 
         # 初始化服务时间
         self.start_time = time.time()
+        self.wait_seconds = wait_seconds
+        self.max_runtime = max_runtime
 
     def log_remotely(self, level, message, extra_fields=None):
         """
@@ -164,13 +167,13 @@ class PDFProcessService:
         """
         self.log_remotely("INFO", "PDF处理服务已启动")
         
-        while True:
+        while time.time() - self.start_time < self.max_runtime:
             try:
                 # 检查心跳
                 self.log_heartbeat()
                 
                 # 接收消息
-                message = self.queue.receive_message(wait_seconds=30)
+                message = self.queue.receive_message(wait_seconds=self.wait_seconds)
                 if message.dequeue_count >= 3:
                     self.log_remotely("INFO", f"消息 {message.message_id} 已重试3次，跳过处理")
                     self.queue.delete_message(message.receipt_handle)
@@ -185,11 +188,12 @@ class PDFProcessService:
                 
             except MNSExceptionBase as e:
                 if e.type == "MessageNotExist":
-                    self.log_heartbeat()
                     continue
                 self.log_remotely("ERROR", f"接收消息失败: {e}", {"exception_type": type(e).__name__, "exc_info": True})
             except Exception as e:
                 self.log_remotely("ERROR", f"处理消息时发生错误: {e}", {"exception_type": type(e).__name__, "exc_info": True})
+
+        self.log_remotely("INFO", f"PDF处理服务已运行 {int(time.time() - self.start_time)} 秒，即将关闭")
 
     def process_message(self, message):
         """
@@ -473,6 +477,12 @@ class PDFProcessService:
             self.last_heartbeat_time = current_time
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='PDF处理服务')
+    parser.add_argument('--config', '-c', type=str, default='config/config.yaml', help='配置文件路径')
+    parser.add_argument('--wait-seconds', '-w', type=int, default=30, help='消息队列等待时长(秒)')
+    parser.add_argument('--max-runtime', '-m', type=int, default=3600*24, help='最大运行时长(秒)')
+    args = parser.parse_args()
+
     logger.info("开始启动PDF处理服务")
-    service = PDFProcessService('config/config.yaml')
+    service = PDFProcessService(args.config, args.wait_seconds, args.max_runtime)
     service.start() 
