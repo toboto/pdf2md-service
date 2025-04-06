@@ -51,8 +51,7 @@ class PDFProcessService:
     PDF处理服务类
     处理从MNS接收的消息，将PDF转换为Markdown并上传到OSS
     """
-    
-    def __init__(self, config_path, wait_seconds=30, max_runtime=3600*24):
+    def __init__(self, config_path, wait_seconds=30, max_runtime=3600*24, log_heartbeat_period=300):
         """
         初始化服务
         Args:
@@ -114,6 +113,7 @@ class PDFProcessService:
         self.start_time = time.time()
         self.wait_seconds = wait_seconds
         self.max_runtime = max_runtime
+        self.log_heartbeat_period = log_heartbeat_period
 
     def log_remotely(self, level, message, extra_fields=None):
         """
@@ -469,7 +469,7 @@ class PDFProcessService:
         如果距离上次心跳超过5分钟，则输出心跳日志
         """
         current_time = time.time()
-        if current_time - self.last_heartbeat_time >= 300:  # 5分钟 = 300秒
+        if current_time - self.last_heartbeat_time >= self.log_heartbeat_period:  # 默认5分钟 = 300秒
             self.log_remotely("INFO", "PDF处理服务心跳检测", {
                 "uptime": current_time - self.start_time,
                 "memory_usage": psutil.Process().memory_info().rss / 1024 / 1024  # 转换为MB
@@ -481,8 +481,9 @@ if __name__ == '__main__':
     parser.add_argument('--config', '-c', type=str, default='config/config.yaml', help='配置文件路径')
     parser.add_argument('--wait-seconds', '-w', type=int, default=30, help='消息队列等待时长(秒)')
     parser.add_argument('--max-runtime', '-m', type=int, default=3600*24, help='最大运行时长(秒)')
+    parser.add_argument('--log-heartbeat-period', '-l', type=int, default=300, help='心跳检测周期(秒)')
     args = parser.parse_args()
 
     logger.info("开始启动PDF处理服务")
-    service = PDFProcessService(args.config, args.wait_seconds, args.max_runtime)
+    service = PDFProcessService(args.config, args.wait_seconds, args.max_runtime, args.log_heartbeat_period)
     service.start() 
