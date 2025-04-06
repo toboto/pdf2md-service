@@ -180,6 +180,7 @@ class PDFProcessService:
                 self.process_message(message)
                 
                 # 删除已处理的消息
+                self.log_remotely("INFO", f"删除已处理的消息 {message.message_id}")
                 self.queue.delete_message(message.receipt_handle)
                 
             except MNSExceptionBase as e:
