@@ -51,7 +51,7 @@ class PDFProcessService:
     PDF处理服务类
     处理从MNS接收的消息，将PDF转换为Markdown并上传到OSS
     """
-    def __init__(self, config_path, wait_seconds=30, max_runtime=3600*24, log_heartbeat_period=300):
+    def __init__(self, config_path, wait_seconds=30, max_runtime=3600*6, log_heartbeat_period=300):
         """
         初始化服务
         Args:
@@ -480,7 +480,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PDF处理服务')
     parser.add_argument('--config', '-c', type=str, default='config/config.yaml', help='配置文件路径')
     parser.add_argument('--wait-seconds', '-w', type=int, default=30, help='消息队列等待时长(秒)')
-    parser.add_argument('--max-runtime', '-m', type=int, default=3600*24, help='最大运行时长(秒)')
+    parser.add_argument('--max-runtime', '-m', type=int, default=3600*6, help='最大运行时长(秒)')
     parser.add_argument('--log-heartbeat-period', '-l', type=int, default=300, help='心跳检测周期(秒)')
     args = parser.parse_args()
 
