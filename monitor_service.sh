@@ -38,7 +38,7 @@ while true; do
         if [ "$time_diff" -gt "$HEARTBEAT_TIMEOUT" ]; then
             # 心跳超时，停止服务
             echo "$(date '+%Y-%m-%d %H:%M:%S') - 心跳超时（${time_diff}分钟），停止服务..."
-            ./stop_service.sh
+            launchctl stop com.rbase.pdf2md
         else
             echo "$(date '+%Y-%m-%d %H:%M:%S') - 服务正常运行，最后心跳 ${time_diff} 分钟前"
         fi
