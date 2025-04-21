@@ -3,6 +3,7 @@
 # 默认参数值
 LOG_FILE="logs/pdf_service.log"
 LOG_TIMEOUT=20
+HEARTBEAT_TIMEOUT=10
 CHECK_INTERVAL=60
 
 # 解析命令行参数
@@ -16,6 +17,10 @@ while [[ $# -gt 0 ]]; do
             LOG_TIMEOUT="$2"
             shift 2
             ;;
+        -b|--heartbeat-timeout)
+            HEARTBEAT_TIMEOUT="$2"
+            shift 2
+            ;;
         -i|--interval)
             CHECK_INTERVAL="$2"
             shift 2
@@ -23,10 +28,11 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             echo "Usage: $0 [options]"
             echo "Options:"
-            echo "  -f, --log-file FILE     日志文件路径 (默认: $LOG_FILE)"
-            echo "  -t, --timeout MINUTES   日志超时时间(分钟) (默认: $LOG_TIMEOUT)"
-            echo "  -i, --interval SECONDS  检查间隔(秒) (默认: $CHECK_INTERVAL)"
-            echo "  -h, --help              显示帮助信息"
+            echo "  -f, --log-file FILE                日志文件路径 (默认: $LOG_FILE)"
+            echo "  -t, --timeout MINUTES              一般日志超时时间(分钟) (默认: $LOG_TIMEOUT)"
+            echo "  -b, --heartbeat-timeout MINUTES    心跳日志超时时间(分钟) (默认: $HEARTBEAT_TIMEOUT)"
+            echo "  -i, --interval SECONDS             检查间隔(秒) (默认: $CHECK_INTERVAL)"
+            echo "  -h, --help                         显示帮助信息"
             exit 0
             ;;
         *)
@@ -51,6 +57,17 @@ while true; do
     
     # 查找最后一条INFO日志
     last_heartbeat=$(grep "[INFO]" "$LOG_FILE" | tail -n 1)
+
+    timeout=$LOG_TIMEOUT
+    # 检查是否为心跳日志，如果是则使用心跳超时时间
+    if echo "$last_heartbeat" | grep -q "心跳"; then
+        timeout=$HEARTBEAT_TIMEOUT
+        echo "$(date '+%Y-%m-%d %H:%M:%S') - 检测到心跳日志，使用心跳超时时间: $HEARTBEAT_TIMEOUT 分钟"
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') - 使用标准日志超时时间: $LOG_TIMEOUT 分钟"
+    fi
+
+    
     
     if [ -z "$last_heartbeat" ]; then
         # 没有找到INFO日志，启动服务
