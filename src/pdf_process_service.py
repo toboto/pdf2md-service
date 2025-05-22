@@ -225,7 +225,7 @@ class PDFProcessService:
             result = self.process_pdf(
                 pdf_path,
                 article_id,
-                self.config['temp']['image_dir']+'/'+article_id+'/',
+                self.config['temp']['image_dir']+f'/{article_id}/',
                 self.config['temp']['markdown_dir']
             )
 
