@@ -290,14 +290,46 @@ class PDFProcessService:
             image_writer = FileBasedDataWriter(image_dir)
             md_writer = FileBasedDataWriter(markdown_dir)
             
-            # 处理PDF
+            # 处理PDF - 添加异常处理
             self.log_remotely("INFO", f"分析PDF文件", {"article_id": article_id})
-            if ds.classify() == SupportedPdfParseMethod.OCR:
-                infer_result = ds.apply(doc_analyze, ocr=True)
-                pipe_result = infer_result.pipe_ocr_mode(image_writer)
-            else:
-                infer_result = ds.apply(doc_analyze, ocr=False)
-                pipe_result = infer_result.pipe_txt_mode(image_writer)
+            try:
+                if ds.classify() == SupportedPdfParseMethod.OCR:
+                    infer_result = ds.apply(doc_analyze, ocr=True)
+                    pipe_result = infer_result.pipe_ocr_mode(image_writer)
+                else:
+                    infer_result = ds.apply(doc_analyze, ocr=False)
+                    pipe_result = infer_result.pipe_txt_mode(image_writer)
+            except KeyError as e:
+                # 当遇到Length1等字体相关错误时，强制使用OCR模式
+                if 'Length1' in str(e) or 'fontfile' in str(e):
+                    self.log_remotely("WARNING", f"PDF字体解析失败，强制使用OCR模式处理, 错误: {e}", {
+                        "article_id": article_id,
+                        "error_type": "font_parse_error",
+                        "fallback_mode": "ocr"
+                    })
+                    infer_result = ds.apply(doc_analyze, ocr=True)
+                    pipe_result = infer_result.pipe_ocr_mode(image_writer)
+                else:
+                    # 其他KeyError继续抛出
+                    raise
+            except Exception as e:
+                # 其他异常也尝试使用OCR模式
+                self.log_remotely("WARNING", f"PDF解析异常，尝试使用OCR模式处理, 错误: {e}", {
+                    "article_id": article_id,
+                    "error_type": "parse_error",
+                    "fallback_mode": "ocr"
+                })
+                try:
+                    infer_result = ds.apply(doc_analyze, ocr=True)
+                    pipe_result = infer_result.pipe_ocr_mode(image_writer)
+                except Exception as ocr_error:
+                    # OCR模式也失败，记录错误并抛出
+                    self.log_remotely("ERROR", f"OCR模式处理也失败: {ocr_error}", {
+                        "article_id": article_id,
+                        "original_error": str(e),
+                        "ocr_error": str(ocr_error)
+                    })
+                    raise ocr_error
                 
             # 获取处理结果
             markdown_path = os.path.join(markdown_dir, f'{article_id}.md')
