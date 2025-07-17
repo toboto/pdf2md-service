@@ -5,6 +5,7 @@ LOG_FILE="logs/pdf_service.log"
 LOG_TIMEOUT=20
 HEARTBEAT_TIMEOUT=10
 CHECK_INTERVAL=60
+UNAME_STR=$(uname)
 
 # 解析命令行参数
 while [[ $# -gt 0 ]]; do
@@ -72,12 +73,30 @@ while true; do
     if [ -z "$last_heartbeat" ]; then
         # 没有找到INFO日志，启动服务
         echo "$(date '+%Y-%m-%d %H:%M:%S') - 未检测到INFO日志，启动服务..."
-        ./start_service.sh
+        if [ "$UNAME_STR" = "Darwin" ]; then
+            ./start_service.sh
+        else
+            pids=$(ps aux | grep 'pdf_process_service.py' | grep -v grep | awk '{print $2}')
+            if [ -n "$pids" ]; then
+                echo "$(date '+%Y-%m-%d %H:%M:%S') - 检测到pdf_process_service.py进程，尝试kill: $pids，并启动服务"
+                kill $pids
+            else
+                echo "$(date '+%Y-%m-%d %H:%M:%S') - 未检测到pdf_process_service.py进程，请手动开启系统服务"
+                ./start_service.sh
+            fi
+        fi
     else
         # 提取日志中的时间戳（使用 sed 替代 grep -P）
         log_time=$(echo "$last_heartbeat" | sed -E 's/^([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}).*/\1/')
-        # 在 macOS 上使用 -j 选项解析日期
-        log_timestamp=$(date -j -f "%Y-%m-%d %H:%M:%S" "$log_time" +%s)
+        
+        # 判断当前操作系统，分别适配 macOS 和 Linux 的 date 命令
+        if [ "$UNAME_STR" = "Darwin" ]; then
+            # macOS 使用 -j 选项
+            log_timestamp=$(date -j -f "%Y-%m-%d %H:%M:%S" "$log_time" +%s)
+        else
+            # Linux 下直接解析
+            log_timestamp=$(date -d "$log_time" +%s)
+        fi
         
         # 计算时间差（分钟）
         time_diff=$(( (current_time - log_timestamp) / 60 ))
@@ -85,7 +104,18 @@ while true; do
         if [ "$time_diff" -gt "$LOG_TIMEOUT" ]; then
             # 日志超时，停止服务
             echo "$(date '+%Y-%m-%d %H:%M:%S') - 日志超时（${time_diff}分钟），停止服务..."
-            launchctl stop com.rbase.pdf2md
+            if [ "$UNAME_STR" = "Darwin" ]; then
+                launchctl stop com.rbase.pdf2md
+            else
+                # 通过ps命令查找pdf_process_service.py进程并终止（无需root权限）
+                pids=$(ps aux | grep 'pdf_process_service.py' | grep -v grep | awk '{print $2}')
+                if [ -n "$pids" ]; then
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') - 检测到pdf_process_service.py进程，尝试kill: $pids"
+                    kill $pids
+                else
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') - 未检测到pdf_process_service.py进程，无法终止进程"
+                fi
+            fi
         else
             echo "$(date '+%Y-%m-%d %H:%M:%S') - 服务正常运行，最后日志${time_diff} 分钟前"
         fi
