@@ -1,0 +1,25 @@
+[Unit]
+Description=Rbase PDF2Markdown Service
+After=network.target 
+# assume conda is located here
+ConditionFileIsExecutable=/home/dev/miniconda3/bin/conda 
+
+
+[Service]
+User=dev
+Group=dev
+Type=simple
+Environment="HF_ENDPOINT=https://hf-mirror.com"
+# assume this is the working directory
+WorkingDirectory=/data0/pdf2md/pdf2md-service 
+# initialize conda environment if needed
+ExecStartPre=-source /home/dev/condainit 
+ExecStart=conda run -n MinerU python /data0/pdf2md/pdf2md-service/src/pdf_process_service.py -c /data0/pdf2md/pdf2md-service/config/config.yaml
+ExecStop=/bin/kill -INT $MAINPID
+KillMode=control-group
+Restart=always
+RestartSec=10s
+LimitNOFILE=infinity
+
+[Install]
+WantedBy=multi-user.target

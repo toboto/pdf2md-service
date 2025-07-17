@@ -115,6 +115,9 @@ class PDFProcessService:
         self.max_runtime = max_runtime
         self.log_heartbeat_period = log_heartbeat_period
 
+        # 初始化通知配置
+        self.notice_hook_url = self.config.get('notice', {}).get('corp_wechat_hook_url', '')
+
     def log_remotely(self, level, message, extra_fields=None):
         """
         发送日志到阿里云日志服务
@@ -176,6 +179,7 @@ class PDFProcessService:
                 message = self.queue.receive_message(wait_seconds=self.wait_seconds)
                 if message.dequeue_count >= 3:
                     self.log_remotely("INFO", f"消息 {message.message_id} 已重试3次，跳过处理")
+                    self.notice_manager(message)
                     self.queue.delete_message(message.receipt_handle)
                     continue
                 
@@ -194,6 +198,24 @@ class PDFProcessService:
                 self.log_remotely("ERROR", f"处理消息时发生错误: {e}", {"exception_type": type(e).__name__, "exc_info": True})
 
         self.log_remotely("INFO", f"PDF处理服务已运行 {int(time.time() - self.start_time)} 秒，即将关闭")
+    
+    def notice_manager(self, message):
+        """
+        通知管理员
+        Args:
+            message: MNS消息对象
+        """
+        if not self.notice_hook_url:
+            return
+        
+        content = json.loads(message.message_body)
+        # 发送通知
+        requests.post(self.notice_hook_url, json={
+            "msgtype": "text",
+            "text": {
+                "content": f"全文数据{content['article_id']}多次处理失败，请检查数据有效性; 数据详情: {message}"
+            }
+        }, timeout=10)
 
     def process_message(self, message):
         """

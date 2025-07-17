@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# 检查当前操作系统是否为macOS，如果不是则退出并报错
+OS_NAME=$(uname)
+if [ "$OS_NAME" != "Darwin" ]; then
+    echo "错误：本启动脚本仅支持在macOS环境下运行。当前系统为：$OS_NAME，请参考README.md中的安装指南"
+    exit 1
+fi
+
 # 函数：停止服务
 stop_service() {
     echo "正在停止服务..."

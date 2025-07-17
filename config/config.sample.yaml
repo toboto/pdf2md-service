@@ -21,3 +21,7 @@ temp:
   pdf_dir: 'temp/pdf'
   image_dir: 'temp/images'
   markdown_dir: 'temp/markdown'
+
+# 企业微信通知配置
+notice:
+  corp_wechat_hook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key="
