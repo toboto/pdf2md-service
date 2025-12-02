@@ -6,6 +6,8 @@ PDF处理服务
 用于从阿里云MNS队列接收消息，处理PDF文件并上传到OSS
 """
 
+import subprocess
+import shutil
 import json
 import sys 
 import os
@@ -16,10 +18,18 @@ import oss2
 from mns.account import Account
 from mns.queue import *
 from mns.topic import *
-from magic_pdf.data.dataset import PymuDocDataset
-from magic_pdf.data.data_reader_writer import FileBasedDataWriter
-from magic_pdf.model.doc_analyze_by_custom_model import doc_analyze
-from magic_pdf.config.enums import SupportedPdfParseMethod
+import copy
+from mineru.cli.common import convert_pdf_bytes_to_bytes_by_pypdfium2, prepare_env
+from mineru.data.data_reader_writer import FileBasedDataWriter
+from mineru.backend.pipeline.pipeline_analyze import doc_analyze as pipeline_doc_analyze
+from mineru.backend.pipeline.pipeline_middle_json_mkcontent import union_make as pipeline_union_make
+from mineru.backend.pipeline.model_json_to_middle_json import result_to_middle_json as pipeline_result_to_middle_json
+from mineru.utils.enum_class import MakeMode
+
+# from magic_pdf.data.dataset import PymuDocDataset
+# from magic_pdf.data.data_reader_writer import FileBasedDataWriter
+# from magic_pdf.model.doc_analyze_by_custom_model import doc_analyze
+# from magic_pdf.config.enums import SupportedPdfParseMethod
 from aliyun.log import LogClient, LogItem, PutLogsRequest
 from aliyun.log.logexception import LogException
 import time
@@ -286,7 +296,7 @@ class PDFProcessService:
 
     def process_pdf(self, pdf_path, article_id, image_dir, markdown_dir):
         """
-        处理PDF文件
+        处理PDF文件 - 使用mineru Python API (Pipeline模式)
         Args:
             pdf_path: PDF文件路径
             article_id: 文章ID
@@ -301,67 +311,117 @@ class PDFProcessService:
                 "pdf_path": pdf_path
             })
             
-            # 读取PDF文件
+            # 读取PDF文件内容
             with open(pdf_path, 'rb') as f:
                 pdf_bytes = f.read()
                 
-            # 创建数据集实例
-            ds = PymuDocDataset(pdf_bytes)
+            # 准备参数列表（pipeline API 需要列表输入）
+            pdf_bytes_list = [pdf_bytes]
+            # PDF文件名用于准备环境等
+            pdf_file_name = f"{article_id}"
             
-            # 配置输出writer
+            # 1. 预处理PDF (convert_pdf_bytes_to_bytes_by_pypdfium2)
+            # 默认从第0页开始解析所有页面
+            start_page_id = 0
+            end_page_id = None
+            
+            self.log_remotely("INFO", f"预处理PDF文件", {"article_id": article_id})
+            new_pdf_bytes = convert_pdf_bytes_to_bytes_by_pypdfium2(pdf_bytes, start_page_id, end_page_id)
+            pdf_bytes_list[0] = new_pdf_bytes
+            
+            # 2. 执行Pipeline分析 (pipeline_doc_analyze)
+            # 参数: pdf_bytes_list, p_lang_list, parse_method='auto', formula_enable=True, table_enable=True
+            p_lang_list = ['ch'] # 默认为中文，可根据需要调整
+            
+            self.log_remotely("INFO", f"执行Pipeline分析", {"article_id": article_id})
+            infer_results, all_image_lists, all_pdf_docs, lang_list, ocr_enabled_list = pipeline_doc_analyze(
+                pdf_bytes_list, 
+                p_lang_list, 
+                parse_method='auto', 
+                formula_enable=True, 
+                table_enable=True
+            )
+            
+            # 获取第一个（也是唯一一个）结果
+            idx = 0
+            model_list = infer_results[idx]
+            model_json = copy.deepcopy(model_list)
+            images_list = all_image_lists[idx]
+            pdf_doc = all_pdf_docs[idx]
+            _lang = lang_list[idx]
+            _ocr_enable = ocr_enabled_list[idx]
+            
+            # 3. 准备输出环境 (prepare_env 会创建目录，但我们已经有了传入的目录，这里主要利用 FileBasedDataWriter)
+            # 注意：prepare_env 会在 output_dir 下创建 pdf_file_name 目录，我们需要适配我们的目录结构
+            # 为了复用mineru逻辑，我们手动创建Writer指向我们的目标目录
+            
+            # image_dir 和 markdown_dir 是调用方传入的最终目录
+            # 确保目录存在
+            os.makedirs(image_dir, exist_ok=True)
+            os.makedirs(markdown_dir, exist_ok=True)
+            
             image_writer = FileBasedDataWriter(image_dir)
             md_writer = FileBasedDataWriter(markdown_dir)
             
-            # 处理PDF - 添加异常处理
-            self.log_remotely("INFO", f"分析PDF文件", {"article_id": article_id})
-            try:
-                if ds.classify() == SupportedPdfParseMethod.OCR:
-                    infer_result = ds.apply(doc_analyze, ocr=True)
-                    pipe_result = infer_result.pipe_ocr_mode(image_writer)
-                else:
-                    infer_result = ds.apply(doc_analyze, ocr=False)
-                    pipe_result = infer_result.pipe_txt_mode(image_writer)
-            except KeyError as e:
-                # 当遇到Length1等字体相关错误时，强制使用OCR模式
-                if 'Length1' in str(e) or 'fontfile' in str(e):
-                    self.log_remotely("WARNING", f"PDF字体解析失败，强制使用OCR模式处理, 错误: {e}", {
-                        "article_id": article_id,
-                        "error_type": "font_parse_error",
-                        "fallback_mode": "ocr"
-                    })
-                    infer_result = ds.apply(doc_analyze, ocr=True)
-                    pipe_result = infer_result.pipe_ocr_mode(image_writer)
-                else:
-                    # 其他KeyError继续抛出
-                    raise
-            except Exception as e:
-                # 其他异常也尝试使用OCR模式
-                self.log_remotely("WARNING", f"PDF解析异常，尝试使用OCR模式处理, 错误: {e}", {
-                    "article_id": article_id,
-                    "error_type": "parse_error",
-                    "fallback_mode": "ocr"
-                })
-                try:
-                    infer_result = ds.apply(doc_analyze, ocr=True)
-                    pipe_result = infer_result.pipe_ocr_mode(image_writer)
-                except Exception as ocr_error:
-                    # OCR模式也失败，记录错误并抛出
-                    self.log_remotely("ERROR", f"OCR模式处理也失败: {ocr_error}", {
-                        "article_id": article_id,
-                        "original_error": str(e),
-                        "ocr_error": str(ocr_error)
-                    })
-                    raise ocr_error
-                
-            # 获取处理结果
-            markdown_path = os.path.join(markdown_dir, f'{article_id}.md')
-            json_middle_path = os.path.join(markdown_dir, f'{article_id}_middle.json')
-            json_content_list_path = os.path.join(markdown_dir, f'{article_id}_content_list.json')
+            # 4. 转换结果为中间JSON (pipeline_result_to_middle_json)
+            self.log_remotely("INFO", f"生成中间JSON结果", {"article_id": article_id})
+            middle_json = pipeline_result_to_middle_json(
+                model_list, 
+                images_list, 
+                pdf_doc, 
+                image_writer, 
+                _lang, 
+                _ocr_enable, 
+                formula_enable=True
+            )
             
-            # 导出结果文件
-            pipe_result.dump_md(md_writer, f'{article_id}.md', image_dir)
-            pipe_result.dump_middle_json(md_writer, f'{article_id}_middle.json')
-            pipe_result.dump_content_list(md_writer, f"{article_id}_content_list.json", image_dir)
+            pdf_info = middle_json["pdf_info"]
+            
+            # 5. 生成最终输出文件 (_process_output logic from demo.py adapted)
+            # 我们需要生成: Markdown, content_list.json, middle.json, model.json (可选)
+            # 图片已经在 pipeline_result_to_middle_json 过程中通过 image_writer 写入了
+            
+            # 定义输出文件名
+            md_filename = f"{article_id}.md"
+            middle_json_filename = f"{article_id}_middle.json"
+            content_list_filename = f"{article_id}_content_list.json"
+            # model_json_filename = f"{article_id}_model.json"
+            
+            # 5.1 生成Markdown
+            # pipeline模式使用 pipeline_union_make
+            # image_dir 参数在 markdown 中引用图片时的路径前缀。
+            # 如果图片和md在同一目录或相对路径，这里需要设置正确。
+            # 在本服务的逻辑中，图片通常在 oss 上的 images_path，或者本地的 image_dir。
+            # 这里我们传入 image_dir 的 basename，假设 Markdown 中引用图片是相对路径
+            # 注意：如果最终展示需要特定路径，可能需要调整这里
+            img_dir_rel = os.path.basename(image_dir.rstrip('/'))
+            
+            md_content_str = pipeline_union_make(pdf_info, MakeMode.MM_MD, img_dir_rel)
+            md_writer.write_string(md_filename, md_content_str)
+            
+            # 5.2 生成 Content List JSON
+            content_list = pipeline_union_make(pdf_info, MakeMode.CONTENT_LIST, img_dir_rel)
+            md_writer.write_string(
+                content_list_filename,
+                json.dumps(content_list, ensure_ascii=False, indent=4)
+            )
+            
+            # 5.3 生成 Middle JSON
+            md_writer.write_string(
+                middle_json_filename,
+                json.dumps(middle_json, ensure_ascii=False, indent=4)
+            )
+            
+            # 5.4 (可选) 生成 Model JSON
+            # md_writer.write_string(
+            #     model_json_filename,
+            #     json.dumps(model_json, ensure_ascii=False, indent=4)
+            # )
+            
+            # 构建结果路径返回
+            markdown_path = os.path.join(markdown_dir, md_filename)
+            json_middle_path = os.path.join(markdown_dir, middle_json_filename)
+            json_content_list_path = os.path.join(markdown_dir, content_list_filename)
             
             self.log_remotely("INFO", f"PDF文件处理完成, 文章ID: {article_id}, 文章路径: {markdown_path}", {
                 "article_id": article_id,
