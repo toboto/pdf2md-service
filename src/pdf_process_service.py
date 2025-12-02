@@ -371,8 +371,7 @@ class PDFProcessService:
                 pdf_doc, 
                 image_writer, 
                 _lang, 
-                _ocr_enable, 
-                formula_enable=True
+                _ocr_enable
             )
             
             pdf_info = middle_json["pdf_info"]
