@@ -331,7 +331,7 @@ class PDFProcessService:
             
             # 2. 执行Pipeline分析 (pipeline_doc_analyze)
             # 参数: pdf_bytes_list, p_lang_list, parse_method='auto', formula_enable=True, table_enable=True
-            p_lang_list = ['ch'] # 默认为中文，可根据需要调整
+            p_lang_list = ['en'] # 默认为英文，大多数文章是英文
             
             self.log_remotely("INFO", f"执行Pipeline分析", {"article_id": article_id})
             infer_results, all_image_lists, all_pdf_docs, lang_list, ocr_enabled_list = pipeline_doc_analyze(
