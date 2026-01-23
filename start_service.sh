@@ -121,13 +121,6 @@ else
     echo "警告：日志文件不存在，请手动检查服务状态"
 fi
 
-# 检查错误日志
-if [ -f "$CURRENT_DIR/logs/error.log" ] && [ -s "$CURRENT_DIR/logs/error.log" ]; then
-    echo "错误日志内容："
-    tail -n 10 "$CURRENT_DIR/logs/error.log"
-    echo "警告：发现错误日志，请检查服务是否正常运行"
-fi
-
 echo "服务已成功启动"
 
 # 使用说明
