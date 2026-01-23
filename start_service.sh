@@ -7,6 +7,49 @@ if [ "$OS_NAME" != "Darwin" ]; then
     exit 1
 fi
 
+# 解析命令行参数
+FORCE_DEFAULT=false
+while getopts "f" opt; do
+    case $opt in
+        f)
+            FORCE_DEFAULT=true
+            ;;
+        \?)
+            echo "无效的参数: -$OPTARG"
+            echo "用法: $0 [-f]"
+            echo "  -f: 强制使用默认的python命令"
+            exit 1
+            ;;
+    esac
+done
+
+# 确定要使用的Python路径
+if [ "$FORCE_DEFAULT" = true ]; then
+    PYTHON_PATH="python"
+    echo "使用默认Python: $PYTHON_PATH"
+elif [ -z "$VIRTUAL_ENV" ]; then
+    echo "错误：没有检测到激活的虚拟环境"
+    echo "请先激活虚拟环境，或使用 -f 参数强制使用默认Python"
+    echo ""
+    echo "激活虚拟环境示例："
+    echo "  source .venv/bin/activate"
+    echo ""
+    echo "或强制使用默认Python："
+    echo "  $0 -f"
+    exit 1
+else
+    PYTHON_PATH="$VIRTUAL_ENV/bin/python"
+    echo "使用虚拟环境Python: $PYTHON_PATH"
+fi
+
+# 验证Python路径是否有效
+if ! command -v "$PYTHON_PATH" &> /dev/null; then
+    echo "错误：Python路径无效: $PYTHON_PATH"
+    exit 1
+fi
+
+echo "Python版本: $("$PYTHON_PATH" --version)"
+
 # 函数：停止服务
 stop_service() {
     echo "正在停止服务..."
@@ -27,10 +70,13 @@ CURRENT_DIR=$(pwd)
 # 备份原始plist文件
 cp com.rbase.pdf2md.plist com.rbase.pdf2md.plist.bak
 
-# 将plist文件中的[dist_home]替换为当前目录
+# 将plist文件中的[dist_home]和[python_path]替换为实际路径
 sed -i '' "s|\[dist_home\]|$CURRENT_DIR|g" com.rbase.pdf2md.plist
+sed -i '' "s|\[python_path\]|$PYTHON_PATH|g" com.rbase.pdf2md.plist
 
-echo "已将plist文件中的[dist_home]替换为当前目录: $CURRENT_DIR"
+echo "已将plist文件中的占位符替换为实际路径:"
+echo "  [dist_home] -> $CURRENT_DIR"
+echo "  [python_path] -> $PYTHON_PATH"
 
 # 加载服务
 echo "正在加载服务..."
